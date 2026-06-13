@@ -149,9 +149,7 @@ function generateBotHTML(movie, requestUrl) {
     ? movie.description.substring(0, 200) 
     : `Download ${movie.title} with Sinhala Subtitles for free on CMoviez. High quality movie downloads.`;
   const rawPoster = movie.poster || '';
-  const poster = rawPoster 
-    ? `https://wsrv.nl/?url=${encodeURIComponent(rawPoster)}&w=800&output=jpg&q=85` 
-    : '';
+  const poster = rawPoster;
   const year = movie.year || '';
 
   return `<!DOCTYPE html>
@@ -177,6 +175,42 @@ function generateBotHTML(movie, requestUrl) {
 </head>
 <body>
   <h1>${movie.title} (${year})</h1>
+  <p>${description}</p>
+  <img src="${poster}" alt="${movie.title}">
+  <a href="${requestUrl}">Watch on CMoviez</a>
+</body>
+</html>`;
+}
+
+function generateEpisodeBotHTML(movie, seasonNum, episodeNum, requestUrl) {
+  const title = `${movie.title} Season ${seasonNum} Episode ${episodeNum} Sinhala Subtitles | CMoviez`;
+  const description = `Download ${movie.title} Season ${seasonNum} Episode ${episodeNum} with Sinhala Subtitles for free on CMoviez. High quality episode downloads.`;
+  const rawPoster = movie.backdrop || movie.poster || '';
+  const poster = rawPoster;
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>${title}</title>
+  <meta name="description" content="${description}">
+
+  <meta property="og:type" content="video.episode">
+  <meta property="og:url" content="${requestUrl}">
+  <meta property="og:title" content="${title}">
+  <meta property="og:description" content="${description}">
+  <meta property="og:image" content="${poster}">
+  <meta property="og:site_name" content="CMoviez">
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="${title}">
+  <meta name="twitter:description" content="${description}">
+  <meta name="twitter:image" content="${poster}">
+
+  <meta http-equiv="refresh" content="0;url=${requestUrl}">
+</head>
+<body>
+  <h1>${movie.title} Season ${seasonNum} Episode ${episodeNum}</h1>
   <p>${description}</p>
   <img src="${poster}" alt="${movie.title}">
   <a href="${requestUrl}">Watch on CMoviez</a>
@@ -384,6 +418,29 @@ app.get('/watch/:slug', async (req, res) => {
   }
 
   // Serve the React client built assets if they exist
+  const frontendIndex = path.join(__dirname, '../film/dist/index.html');
+  res.sendFile(frontendIndex, (err) => {
+    if (err) {
+      res.status(404).send('Web app is loading, please try again later or check server configuration.');
+    }
+  });
+});
+
+app.get('/watch/:slug/season/:season/episode/:episode', async (req, res) => {
+  const userAgent = req.headers['user-agent'] || '';
+  if (isBot(userAgent)) {
+    try {
+      const movie = await findMovieBySlug(req.params.slug);
+      if (movie) {
+        const requestUrl = `${req.protocol}://${req.get('host')}${req.originalUrl}`;
+        const html = generateEpisodeBotHTML(formatDocument(movie), req.params.season, req.params.episode, requestUrl);
+        return res.send(html);
+      }
+    } catch (err) {
+      console.error('Bot route error:', err);
+    }
+  }
+
   const frontendIndex = path.join(__dirname, '../film/dist/index.html');
   res.sendFile(frontendIndex, (err) => {
     if (err) {
