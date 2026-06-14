@@ -83,7 +83,15 @@ function formatDocument(doc) {
   if (!doc) return null;
   const obj = doc.toObject ? doc.toObject() : doc;
   
-  const id = obj.id || (obj._id ? obj._id.toString() : '');
+  // Access the custom 'id' field directly from the Mongoose document to bypass the virtual 'id' getter conflict
+  let id = '';
+  if (doc.get && typeof doc.get === 'function') {
+    id = doc.get('id');
+  }
+  if (!id) {
+    id = obj.id || (obj._id ? obj._id.toString() : '');
+  }
+
   const createdAt = obj.createdAt ? obj.createdAt.toISOString() : new Date().toISOString();
   const updatedAt = obj.updatedAt ? obj.updatedAt.toISOString() : new Date().toISOString();
   
