@@ -60,7 +60,8 @@ const documentSchema = new mongoose.Schema({
   isFeaturedMovies: { type: Boolean, default: false },
   isFeaturedTV: { type: Boolean, default: false },
   isFeaturedAnime: { type: Boolean, default: false },
-  isTrending: { type: Boolean, default: false }
+  isTrending: { type: Boolean, default: false },
+  trendingRank: { type: Number, default: 0 }
 }, {
   timestamps: true,
   minimize: false
