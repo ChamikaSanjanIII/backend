@@ -83,7 +83,7 @@ function formatDocument(doc) {
   if (!doc) return null;
   const obj = doc.toObject ? doc.toObject() : doc;
   
-  const id = obj.id;
+  const id = obj.id || (obj._id ? obj._id.toString() : '');
   const createdAt = obj.createdAt ? obj.createdAt.toISOString() : new Date().toISOString();
   const updatedAt = obj.updatedAt ? obj.updatedAt.toISOString() : new Date().toISOString();
   
@@ -302,7 +302,10 @@ app.get('/api/collections/:table/documents/:id', async (req, res) => {
   }
 
   try {
-    const doc = await Model.findOne({ id });
+    let doc = await Model.findOne({ id });
+    if (!doc && mongoose.Types.ObjectId.isValid(id)) {
+      doc = await Model.findById(id);
+    }
     if (!doc) {
       return res.status(404).json({ error: 'Not found' });
     }
@@ -364,7 +367,10 @@ app.put('/api/collections/:table/documents/:id', async (req, res) => {
     delete body.$createdAt;
     delete body.$updatedAt;
 
-    const doc = await Model.findOneAndUpdate({ id }, { $set: body }, { new: true });
+    let doc = await Model.findOneAndUpdate({ id }, { $set: body }, { new: true });
+    if (!doc && mongoose.Types.ObjectId.isValid(id)) {
+      doc = await Model.findOneAndUpdate({ _id: id }, { $set: body }, { new: true });
+    }
     if (!doc) {
       return res.status(404).json({ error: 'Not found' });
     }
@@ -389,7 +395,10 @@ app.delete('/api/collections/:table/documents/:id', async (req, res) => {
   }
 
   try {
-    const result = await Model.deleteOne({ id });
+    let result = await Model.deleteOne({ id });
+    if (result.deletedCount === 0 && mongoose.Types.ObjectId.isValid(id)) {
+      result = await Model.deleteOne({ _id: id });
+    }
     if (result.deletedCount === 0) {
       return res.status(404).json({ error: 'Not found' });
     }
