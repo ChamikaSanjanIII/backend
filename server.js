@@ -182,8 +182,6 @@ function generateBotHTML(movie, requestUrl) {
   <meta name="twitter:title" content="${title}">
   <meta name="twitter:description" content="${description}">
   <meta name="twitter:image" content="${poster}">
-
-  <meta http-equiv="refresh" content="0;url=${requestUrl}">
 </head>
 <body>
   <h1>${movie.title} (${year})</h1>
@@ -218,8 +216,6 @@ function generateEpisodeBotHTML(movie, seasonNum, episodeNum, requestUrl) {
   <meta name="twitter:title" content="${title}">
   <meta name="twitter:description" content="${description}">
   <meta name="twitter:image" content="${poster}">
-
-  <meta http-equiv="refresh" content="0;url=${requestUrl}">
 </head>
 <body>
   <h1>${movie.title} Season ${seasonNum} Episode ${episodeNum}</h1>
