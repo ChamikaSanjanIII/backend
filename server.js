@@ -230,6 +230,22 @@ function generateEpisodeBotHTML(movie, seasonNum, episodeNum, requestUrl) {
 
 // ── REST API Routes ────────────────────────────────────────────────────────────
 
+// Robots.txt to prevent search engines from crawling the API
+app.get('/robots.txt', (req, res) => {
+  res.type('text/plain');
+  res.send("User-agent: *\nDisallow: /");
+});
+
+// Root API path health check & status
+app.get('/', (req, res) => {
+  res.set('X-Robots-Tag', 'noindex, nofollow');
+  res.json({
+    status: 'online',
+    message: 'CMovieZ API Server is running',
+    version: '1.0.0'
+  });
+});
+
 // Login
 app.post('/api/auth/login', (req, res) => {
   const { email, password } = req.body;
