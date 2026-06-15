@@ -123,7 +123,7 @@ function verifyAuth(req) {
 const BOT_USER_AGENTS = [
   'facebookexternalhit', 'Facebot', 'Twitterbot', 'WhatsApp',
   'TelegramBot', 'LinkedInBot', 'Slackbot', 'Discordbot',
-  'Pinterest', 'Viber', 'Googlebot', 'bingbot', 'Applebot',
+  'Pinterest', 'Viber', 'Googlebot', 'Google-Inspection-Tool', 'Google', 'bingbot', 'Applebot',
 ];
 
 function isBot(userAgent) {
@@ -144,7 +144,9 @@ async function findMovieBySlug(slug) {
   for (const Model of collections) {
     const doc = await Model.findOne({
       $or: [
+        { slug: slug },
         { slug: cleanSlug },
+        { id: slug },
         { id: cleanSlug }
       ]
     });
@@ -237,7 +239,7 @@ app.get('/robots.txt', (req, res) => {
 });
 
 // Root API path health check & status
-app.get('/', (req, res) => {
+app.get('/api', (req, res) => {
   res.set('X-Robots-Tag', 'noindex, nofollow');
   res.json({
     status: 'online',
