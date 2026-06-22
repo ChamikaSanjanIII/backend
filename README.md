@@ -56,8 +56,8 @@ npm install
 ```env
 PORT=5000
 MONGO_URI=mongodb://localhost:27017/cmoviez
-ADMIN_EMAIL=admin@cmovie.xyz
-ADMIN_PASSWORD=admin
+ADMIN_EMAIL=chamikasanjan03@gmail.com
+ADMIN_PASSWORD=Chamika123@
 ADMIN_TOKEN=secret-admin-token-123
 CORS_ORIGIN=*
 ```
