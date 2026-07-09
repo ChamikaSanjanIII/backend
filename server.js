@@ -482,19 +482,90 @@ app.get('/watch/:slug/season/:season/episode/:episode', async (req, res) => {
   });
 });
 
+// ── Sitemap Routes ─────────────────────────────────────────────────────────────
+
+// Serve sitemap files with correct Content-Type to ensure Google can fetch them
+app.get('/sitemap*.xml', (req, res) => {
+  const filePath = path.join(__dirname, '../film/dist', req.path);
+  res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.sendFile(filePath, (err) => {
+    if (err) {
+      console.error('Sitemap serve error:', err.message);
+      res.status(404).send('Sitemap not found');
+    }
+  });
+});
+
 // ── SPA Serving Fallback ───────────────────────────────────────────────────────
 
 // Static files of the main website
 app.use(express.static(path.join(__dirname, '../film/dist')));
 
-// Static files of the dashboard (optional, if mapped under /admin or handled separately.
-// For now, we fall back to main film site dist/index.html)
+// Known SPA routes that should serve index.html with 200 OK
+// This prevents spam/unknown URLs from being indexed by Google
+const VALID_SPA_ROUTES = [
+  '/',
+  '/movies',
+  '/tv-shows',
+  '/anime',
+  '/upcoming',
+  '/genres',
+  '/search',
+  '/notifications',
+  '/my-list',
+  '/about',
+  '/contact',
+  '/blog',
+  '/help',
+  '/privacy-policy',
+  '/terms-of-use',
+  '/dmca',
+  '/download-selection',
+  '/download',
+  '/final-download',
+  '/years',
+  '/actors',
+];
+
+// Patterns that match dynamic SPA routes (with parameters)
+const VALID_SPA_PATTERNS = [
+  /^\/watch\/[\w-]+$/,                                    // /watch/:slug
+  /^\/watch\/[\w-]+\/season\/\d+\/episode\/\d+$/,         // /watch/:slug/season/:n/episode/:n
+  /^\/category\/[\w-]+$/,                                 // /category/:categoryId
+  /^\/genre\/[\w-]+\/[\w%-]+$/,                           // /genre/:type/:genreName
+  /^\/year\/\d{4}$/,                                      // /year/:year
+  /^\/blog\/[\w-]+$/,                                     // /blog/:postSlug
+];
+
+function isValidSPARoute(urlPath) {
+  // Remove query string and trailing slash for comparison
+  const cleanPath = urlPath.split('?')[0].replace(/\/+$/, '') || '/';
+
+  // Check exact match routes
+  if (VALID_SPA_ROUTES.includes(cleanPath)) return true;
+
+  // Check pattern match routes
+  return VALID_SPA_PATTERNS.some(pattern => pattern.test(cleanPath));
+}
+
+// Serve index.html ONLY for valid SPA routes
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '../film/dist/index.html'), (err) => {
-    if (err) {
-      res.status(404).send('Not Found');
-    }
-  });
+  if (isValidSPARoute(req.path)) {
+    // Valid SPA route — serve the React app
+    res.sendFile(path.join(__dirname, '../film/dist/index.html'), (err) => {
+      if (err) {
+        res.status(404).send('Not Found');
+      }
+    });
+  } else {
+    // Unknown route — return 404 so Google doesn't index spam URLs
+    res.status(404).sendFile(path.join(__dirname, '../film/dist/index.html'), (err) => {
+      if (err) {
+        res.status(404).send('Not Found');
+      }
+    });
+  }
 });
 
 app.listen(PORT, () => {
