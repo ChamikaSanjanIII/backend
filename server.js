@@ -4,6 +4,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { generateSitemaps } from './generate_sitemap.js';
 
 dotenv.config();
 
@@ -23,7 +24,11 @@ app.use(express.json());
 
 // MongoDB Connection
 mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/cmoviez')
-  .then(() => console.log('MongoDB connected successfully'))
+  .then(() => {
+    console.log('MongoDB connected successfully');
+    // Generate sitemaps on startup to include all existing films
+    generateSitemaps().catch(err => console.error('[Sitemap] Startup generation error:', err.message));
+  })
   .catch(err => console.error('MongoDB connection error:', err));
 
 // Database Schemas
@@ -360,6 +365,9 @@ app.post('/api/collections/:table/documents', async (req, res) => {
     const newDoc = new Model({ ...body, id });
     await newDoc.save();
 
+    // Auto-regenerate sitemap in background
+    generateSitemaps().catch(err => console.error('[Sitemap] Auto-gen error:', err.message));
+
     return res.status(201).json(formatDocument(newDoc));
   } catch (error) {
     console.error('Create document error:', error);
@@ -399,6 +407,9 @@ app.put('/api/collections/:table/documents/:id', async (req, res) => {
       return res.status(404).json({ error: 'Not found' });
     }
 
+    // Auto-regenerate sitemap in background
+    generateSitemaps().catch(err => console.error('[Sitemap] Auto-gen error:', err.message));
+
     return res.json(formatDocument(doc));
   } catch (error) {
     console.error('Update document error:', error);
@@ -426,6 +437,10 @@ app.delete('/api/collections/:table/documents/:id', async (req, res) => {
     if (result.deletedCount === 0) {
       return res.status(404).json({ error: 'Not found' });
     }
+
+    // Auto-regenerate sitemap in background
+    generateSitemaps().catch(err => console.error('[Sitemap] Auto-gen error:', err.message));
+
     return res.json({ success: true, id });
   } catch (error) {
     console.error('Delete document error:', error);
@@ -486,13 +501,20 @@ app.get('/watch/:slug/season/:season/episode/:episode', async (req, res) => {
 
 // Serve sitemap files with correct Content-Type to ensure Google can fetch them
 app.get('/sitemap*.xml', (req, res) => {
-  const filePath = path.join(__dirname, '../film/dist', req.path);
+  const distFilePath = path.join(__dirname, '../film/dist', req.path);
+  const publicFilePath = path.join(__dirname, '../film/public', req.path);
+  
   res.setHeader('Content-Type', 'application/xml; charset=utf-8');
   res.setHeader('Cache-Control', 'public, max-age=3600');
-  res.sendFile(filePath, (err) => {
+  
+  res.sendFile(distFilePath, (err) => {
     if (err) {
-      console.error('Sitemap serve error:', err.message);
-      res.status(404).send('Sitemap not found');
+      res.sendFile(publicFilePath, (err2) => {
+        if (err2) {
+          console.error('Sitemap serve error:', err2.message);
+          res.status(404).send('Sitemap not found');
+        }
+      });
     }
   });
 });
