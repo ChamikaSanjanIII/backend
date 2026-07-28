@@ -20,6 +20,21 @@ function getModel(name, collectionName) {
   }
 }
 
+// Append the SEO suffix that the frontend always uses in real URLs
+// (matches the logic in MovieDetailsPage.jsx & EpisodeDetailsPage.jsx)
+function toSeoSlug(slug) {
+  if (!slug) return slug;
+  const s = String(slug);
+  if (
+    s.includes('-with-sinhala-subtitles') ||
+    s.includes('-sinhala-subtitles') ||
+    s.includes('-sinhala-sub')
+  ) {
+    return s; // already has suffix
+  }
+  return s + '-with-sinhala-subtitles';
+}
+
 function escapeXml(str) {
   if (!str) return '';
   return String(str)
@@ -113,7 +128,7 @@ export async function generateSitemaps() {
     // ── Movies ──────────────────────────────────────────────────────────────────
     const movies = await Movie.find({}, 'slug id updatedAt').lean();
     const movieItems = movies.map(m => ({
-      url: `/watch/${m.slug || m.id}`,
+      url: `/watch/${toSeoSlug(m.slug || m.id)}`,
       updatedAt: m.updatedAt || now,
       priority: '0.8',
       changefreq: 'weekly'
@@ -124,7 +139,7 @@ export async function generateSitemaps() {
     // ── TV Shows ────────────────────────────────────────────────────────────────
     const tvshows = await TVShow.find({}, 'slug id updatedAt').lean();
     const tvItems = tvshows.map(t => ({
-      url: `/watch/${t.slug || t.id}`,
+      url: `/watch/${toSeoSlug(t.slug || t.id)}`,
       updatedAt: t.updatedAt || now,
       priority: '0.8',
       changefreq: 'weekly'
@@ -135,7 +150,7 @@ export async function generateSitemaps() {
     // ── Anime ───────────────────────────────────────────────────────────────────
     const anime = await Anime.find({}, 'slug id updatedAt').lean();
     const animeItems = anime.map(a => ({
-      url: `/watch/${a.slug || a.id}`,
+      url: `/watch/${toSeoSlug(a.slug || a.id)}`,
       updatedAt: a.updatedAt || now,
       priority: '0.8',
       changefreq: 'weekly'
