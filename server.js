@@ -66,10 +66,12 @@ const documentSchema = new mongoose.Schema({
   isFeaturedTV: { type: Boolean, default: false },
   isFeaturedAnime: { type: Boolean, default: false },
   isTrending: { type: Boolean, default: false },
-  trendingRank: { type: Number, default: 0 }
+  trendingRank: { type: Number, default: 0 },
+  isCompleted: { type: Boolean, default: false }
 }, {
   timestamps: true,
-  minimize: false
+  minimize: false,
+  strict: false
 });
 
 // Create models for each collection
