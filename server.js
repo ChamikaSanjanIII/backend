@@ -56,7 +56,7 @@ const documentSchema = new mongoose.Schema({
   download_links: { type: mongoose.Schema.Types.Mixed, default: {} },
   burned_subtitle_links: { type: mongoose.Schema.Types.Mixed, default: {} },
   softcode_subtitle_links: { type: mongoose.Schema.Types.Mixed, default: {} },
-  downloadUrl480p: String,
+  downloadUrl540p: String,
   downloadUrl720p: String,
   downloadUrl1080p: String,
   tmdbId: String,
