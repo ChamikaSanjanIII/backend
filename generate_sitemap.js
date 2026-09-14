@@ -109,19 +109,12 @@ export async function generateSitemaps() {
 
     const now = new Date();
 
-    // ── Static Pages ────────────────────────────────────────────────────────────
+    // ── Static Pages (Only Home, Movies, TV Shows, and Anime are indexed for SEO)
     const staticPages = [
       { url: '/',              priority: '1.0', changefreq: 'daily',   updatedAt: now },
       { url: '/movies',        priority: '0.9', changefreq: 'daily',   updatedAt: now },
       { url: '/tv-shows',      priority: '0.9', changefreq: 'daily',   updatedAt: now },
-      { url: '/anime',         priority: '0.9', changefreq: 'daily',   updatedAt: now },
-      { url: '/upcoming',      priority: '0.7', changefreq: 'weekly',  updatedAt: now },
-      { url: '/genres',        priority: '0.7', changefreq: 'weekly',  updatedAt: now },
-      { url: '/about',         priority: '0.5', changefreq: 'monthly', updatedAt: now },
-      { url: '/contact',       priority: '0.5', changefreq: 'monthly', updatedAt: now },
-      { url: '/privacy-policy',priority: '0.3', changefreq: 'yearly',  updatedAt: now },
-      { url: '/terms-of-use',  priority: '0.3', changefreq: 'yearly',  updatedAt: now },
-      { url: '/dmca',          priority: '0.3', changefreq: 'yearly',  updatedAt: now },
+      { url: '/anime',         priority: '0.9', changefreq: 'daily',   updatedAt: now }
     ];
     saveFile('sitemap-main.xml', buildUrlSetXml(staticPages));
 
@@ -133,7 +126,7 @@ export async function generateSitemaps() {
       priority: '0.8',
       changefreq: 'weekly'
     }));
-    saveFile('sitemap-movies-1.xml', buildUrlSetXml(movieItems));
+    saveFile('sitemap-movies.xml', buildUrlSetXml(movieItems));
     console.log(`[Sitemap] Movies: ${movies.length}`);
 
     // ── TV Shows ────────────────────────────────────────────────────────────────
@@ -161,7 +154,7 @@ export async function generateSitemaps() {
     // ── Index ───────────────────────────────────────────────────────────────────
     saveFile('sitemap.xml', buildIndexXml([
       { url: '/sitemap-main.xml',     lastmod: now },
-      { url: '/sitemap-movies-1.xml', lastmod: now },
+      { url: '/sitemap-movies.xml',   lastmod: now },
       { url: '/sitemap-tvshows.xml',  lastmod: now },
       { url: '/sitemap-anime.xml',    lastmod: now },
     ]));
