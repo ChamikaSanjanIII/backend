@@ -340,7 +340,8 @@ app.get('/api/collections/:table/documents', async (req, res) => {
 
     const query = {};
     if (search) {
-      query[searchField] = { $regex: search, $options: 'i' };
+      const escapedSearch = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      query[searchField] = { $regex: escapedSearch, $options: 'i' };
     }
 
     const sortQuery = {};
