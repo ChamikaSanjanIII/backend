@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { generateSitemaps } from './generate_sitemap.js';
 
@@ -164,14 +165,31 @@ async function findMovieBySlug(slug) {
   return null;
 }
 
+function getRequestUrl(req) {
+  const host = req.get('host') || 'cmoviez.com';
+  return `https://${host}${req.originalUrl}`;
+}
+
 function generateBotHTML(movie, requestUrl) {
-  const title = `${movie.title} Sinhala Subtitles | CMoviez`;
+  const isTV = movie.type === 'tv' || movie.type === 'tvshow';
+  const schemaType = isTV ? 'TVSeries' : 'Movie';
+  const title = `${movie.title} with Sinhala Subtitles | ${movie.title} සිංහල උපසිරැසි සමඟ | CMoviez`;
   const description = movie.description 
-    ? movie.description.substring(0, 200) 
+    ? movie.description.substring(0, 160) 
     : `Download ${movie.title} with Sinhala Subtitles for free on CMoviez. High quality movie downloads.`;
-  const rawPoster = movie.poster || '';
-  const poster = rawPoster;
+  const poster = movie.poster || movie.backdrop || '';
   const year = movie.year || '';
+
+  const schema = {
+    "@context": "https://schema.org",
+    "@type": schemaType,
+    "name": `${movie.title} with Sinhala Subtitles`,
+    "alternateName": movie.title,
+    "description": description,
+    "image": poster,
+    "url": requestUrl,
+    ...(year ? { "datePublished": String(year) } : {})
+  };
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -179,8 +197,9 @@ function generateBotHTML(movie, requestUrl) {
   <meta charset="UTF-8">
   <title>${title}</title>
   <meta name="description" content="${description}">
+  <link rel="canonical" href="${requestUrl}">
 
-  <meta property="og:type" content="video.movie">
+  <meta property="og:type" content="${isTV ? 'video.tv_show' : 'video.movie'}">
   <meta property="og:url" content="${requestUrl}">
   <meta property="og:title" content="${title}">
   <meta property="og:description" content="${description}">
@@ -191,9 +210,11 @@ function generateBotHTML(movie, requestUrl) {
   <meta name="twitter:title" content="${title}">
   <meta name="twitter:description" content="${description}">
   <meta name="twitter:image" content="${poster}">
+
+  <script type="application/ld+json">${JSON.stringify(schema)}</script>
 </head>
 <body>
-  <h1>${movie.title} (${year})</h1>
+  <h1>${movie.title} (${year}) with Sinhala Subtitles</h1>
   <p>${description}</p>
   <img src="${poster}" alt="${movie.title}">
   <a href="${requestUrl}">Watch on CMoviez</a>
@@ -202,10 +223,18 @@ function generateBotHTML(movie, requestUrl) {
 }
 
 function generateEpisodeBotHTML(movie, seasonNum, episodeNum, requestUrl) {
-  const title = `${movie.title} Season ${seasonNum} Episode ${episodeNum} Sinhala Subtitles | CMoviez`;
+  const title = `${movie.title} Season ${seasonNum} Episode ${episodeNum} with Sinhala Subtitles | CMoviez`;
   const description = `Download ${movie.title} Season ${seasonNum} Episode ${episodeNum} with Sinhala Subtitles for free on CMoviez. High quality episode downloads.`;
-  const rawPoster = movie.backdrop || movie.poster || '';
-  const poster = rawPoster;
+  const poster = movie.backdrop || movie.poster || '';
+
+  const schema = {
+    "@context": "https://schema.org",
+    "@type": "TVEpisode",
+    "name": `${movie.title} S${seasonNum}E${episodeNum}`,
+    "description": description,
+    "image": poster,
+    "url": requestUrl
+  };
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -213,6 +242,7 @@ function generateEpisodeBotHTML(movie, seasonNum, episodeNum, requestUrl) {
   <meta charset="UTF-8">
   <title>${title}</title>
   <meta name="description" content="${description}">
+  <link rel="canonical" href="${requestUrl}">
 
   <meta property="og:type" content="video.episode">
   <meta property="og:url" content="${requestUrl}">
@@ -225,6 +255,8 @@ function generateEpisodeBotHTML(movie, seasonNum, episodeNum, requestUrl) {
   <meta name="twitter:title" content="${title}">
   <meta name="twitter:description" content="${description}">
   <meta name="twitter:image" content="${poster}">
+
+  <script type="application/ld+json">${JSON.stringify(schema)}</script>
 </head>
 <body>
   <h1>${movie.title} Season ${seasonNum} Episode ${episodeNum}</h1>
@@ -237,10 +269,19 @@ function generateEpisodeBotHTML(movie, seasonNum, episodeNum, requestUrl) {
 
 // ── REST API Routes ────────────────────────────────────────────────────────────
 
-// Robots.txt to prevent search engines from crawling the API
+// Robots.txt — Serve real robots.txt with allowed media & sitemap index
 app.get('/robots.txt', (req, res) => {
-  res.type('text/plain');
-  res.send("User-agent: *\nDisallow: /");
+  const distRobots = path.join(__dirname, '../film/dist/robots.txt');
+  const publicRobots = path.join(__dirname, '../film/public/robots.txt');
+  res.sendFile(distRobots, (err) => {
+    if (err) {
+      res.sendFile(publicRobots, (err2) => {
+        if (err2) {
+          res.type('text/plain').send("User-agent: *\nAllow: /\n\nSitemap: https://cmoviez.com/sitemap.xml");
+        }
+      });
+    }
+  });
 });
 
 // Root API path health check & status
@@ -455,12 +496,19 @@ app.delete('/api/collections/:table/documents/:id', async (req, res) => {
 // ── OG Bot Routes (Watch paths) ────────────────────────────────────────────────
 
 app.get('/watch/:slug', async (req, res) => {
+  // 1. If static pre-rendered HTML exists in dist/watch/:slug/index.html, serve it directly!
+  const prerenderedPath = path.join(__dirname, '../film/dist/watch', req.params.slug, 'index.html');
+  if (fs.existsSync(prerenderedPath)) {
+    return res.sendFile(prerenderedPath);
+  }
+
+  // 2. Dynamic fallback for bots if not pre-rendered yet
   const userAgent = req.headers['user-agent'] || '';
   if (isBot(userAgent)) {
     try {
       const movie = await findMovieBySlug(req.params.slug);
       if (movie) {
-        const requestUrl = `${req.protocol}://${req.get('host')}${req.originalUrl}`;
+        const requestUrl = getRequestUrl(req);
         const html = generateBotHTML(formatDocument(movie), requestUrl);
         return res.send(html);
       }
@@ -469,7 +517,7 @@ app.get('/watch/:slug', async (req, res) => {
     }
   }
 
-  // Serve the React client built assets if they exist
+  // 3. Fallback to standard SPA index
   const frontendIndex = path.join(__dirname, '../film/dist/index.html');
   res.sendFile(frontendIndex, (err) => {
     if (err) {
@@ -484,7 +532,7 @@ app.get('/watch/:slug/season/:season/episode/:episode', async (req, res) => {
     try {
       const movie = await findMovieBySlug(req.params.slug);
       if (movie) {
-        const requestUrl = `${req.protocol}://${req.get('host')}${req.originalUrl}`;
+        const requestUrl = getRequestUrl(req);
         const html = generateEpisodeBotHTML(formatDocument(movie), req.params.season, req.params.episode, requestUrl);
         return res.send(html);
       }

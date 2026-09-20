@@ -61,8 +61,6 @@ function buildUrlSetXml(items) {
     xml += `  <url>\n`;
     xml += `    <loc>${escapeXml(BASE_URL + item.url)}</loc>\n`;
     xml += `    <lastmod>${formatDate(item.updatedAt)}</lastmod>\n`;
-    xml += `    <changefreq>${item.changefreq || 'weekly'}</changefreq>\n`;
-    xml += `    <priority>${item.priority || '0.8'}</priority>\n`;
     xml += `  </url>\n`;
   }
   xml += `</urlset>\n`;
@@ -111,10 +109,10 @@ export async function generateSitemaps() {
 
     // ── Static Pages (Only Home, Movies, TV Shows, and Anime are indexed for SEO)
     const staticPages = [
-      { url: '/',              priority: '1.0', changefreq: 'daily',   updatedAt: now },
-      { url: '/movies',        priority: '0.9', changefreq: 'daily',   updatedAt: now },
-      { url: '/tv-shows',      priority: '0.9', changefreq: 'daily',   updatedAt: now },
-      { url: '/anime',         priority: '0.9', changefreq: 'daily',   updatedAt: now }
+      { url: '/',              updatedAt: now },
+      { url: '/movies',        updatedAt: now },
+      { url: '/tv-shows',      updatedAt: now },
+      { url: '/anime',         updatedAt: now }
     ];
     saveFile('sitemap-main.xml', buildUrlSetXml(staticPages));
 
@@ -122,9 +120,7 @@ export async function generateSitemaps() {
     const movies = await Movie.find({}, 'slug id updatedAt').lean();
     const movieItems = movies.map(m => ({
       url: `/watch/${toSeoSlug(m.slug || m.id)}`,
-      updatedAt: m.updatedAt || now,
-      priority: '0.8',
-      changefreq: 'weekly'
+      updatedAt: m.updatedAt || now
     }));
     saveFile('sitemap-movies.xml', buildUrlSetXml(movieItems));
     console.log(`[Sitemap] Movies: ${movies.length}`);
@@ -133,9 +129,7 @@ export async function generateSitemaps() {
     const tvshows = await TVShow.find({}, 'slug id updatedAt').lean();
     const tvItems = tvshows.map(t => ({
       url: `/watch/${toSeoSlug(t.slug || t.id)}`,
-      updatedAt: t.updatedAt || now,
-      priority: '0.8',
-      changefreq: 'weekly'
+      updatedAt: t.updatedAt || now
     }));
     saveFile('sitemap-tvshows.xml', buildUrlSetXml(tvItems));
     console.log(`[Sitemap] TV Shows: ${tvshows.length}`);
@@ -144,9 +138,7 @@ export async function generateSitemaps() {
     const anime = await Anime.find({}, 'slug id updatedAt').lean();
     const animeItems = anime.map(a => ({
       url: `/watch/${toSeoSlug(a.slug || a.id)}`,
-      updatedAt: a.updatedAt || now,
-      priority: '0.8',
-      changefreq: 'weekly'
+      updatedAt: a.updatedAt || now
     }));
     saveFile('sitemap-anime.xml', buildUrlSetXml(animeItems));
     console.log(`[Sitemap] Anime: ${anime.length}`);
