@@ -83,11 +83,28 @@ const TVShow = mongoose.model('TVShow', documentSchema, 'tvshows');
 const Anime = mongoose.model('Anime', documentSchema, 'anime');
 const Upcoming = mongoose.model('Upcoming', documentSchema, 'upcoming');
 
+const customCollectionSchema = new mongoose.Schema({
+  id: { type: String, required: true, unique: true },
+  title: String,
+  slug: String,
+  description: String,
+  poster: String,
+  backdrop: String,
+  items: Array
+}, {
+  timestamps: true,
+  strict: false
+});
+
+const CustomCollection = mongoose.model('CustomCollection', customCollectionSchema, 'custom_collections');
+
 const modelsMap = {
   movies: Movie,
   tvshows: TVShow,
   anime: Anime,
-  upcoming: Upcoming
+  upcoming: Upcoming,
+  custom_collections: CustomCollection,
+  collections: CustomCollection
 };
 
 // Formatting helper to match the exact schema expected by client apps
@@ -364,6 +381,38 @@ app.get('/api/collections/:table/documents', async (req, res) => {
     });
   } catch (error) {
     console.error('List documents error:', error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// Search across all items (Movies, TV Shows, Anime, Upcoming)
+app.get('/api/search-all', async (req, res) => {
+  const queryStr = req.query.q || '';
+  if (!queryStr.trim()) {
+    return res.json({ results: [] });
+  }
+
+  try {
+    const regex = new RegExp(queryStr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+    const searchFilter = { title: regex };
+
+    const [movies, tvshows, anime, upcoming] = await Promise.all([
+      Movie.find(searchFilter).limit(20),
+      TVShow.find(searchFilter).limit(20),
+      Anime.find(searchFilter).limit(20),
+      Upcoming.find(searchFilter).limit(20)
+    ]);
+
+    const combined = [
+      ...movies.map(d => ({ ...formatDocument(d), mediaType: 'movies' })),
+      ...tvshows.map(d => ({ ...formatDocument(d), mediaType: 'tvshows' })),
+      ...anime.map(d => ({ ...formatDocument(d), mediaType: 'anime' })),
+      ...upcoming.map(d => ({ ...formatDocument(d), mediaType: 'upcoming' }))
+    ];
+
+    return res.json({ results: combined });
+  } catch (error) {
+    console.error('Search all error:', error);
     return res.status(500).json({ error: error.message });
   }
 });
