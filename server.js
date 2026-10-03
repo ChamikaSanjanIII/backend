@@ -526,6 +526,20 @@ app.post('/api/requests', async (req, res) => {
   }
 });
 
+// Public stats — no auth required (counts only, no private data)
+app.get('/api/requests/stats', async (req, res) => {
+  try {
+    const total    = await MovieRequest.countDocuments();
+    const pending  = await MovieRequest.countDocuments({ status: 'pending' });
+    const complete = await MovieRequest.countDocuments({ status: 'complete' });
+    const rejected = await MovieRequest.countDocuments({ status: 'rejected' });
+    return res.json({ total, pending, complete, rejected });
+  } catch (error) {
+    console.error('Stats error:', error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
 // List all requests (admin)
 app.get('/api/requests', async (req, res) => {
   if (!verifyAuth(req)) return res.status(401).json({ error: 'Unauthorized' });
