@@ -83,35 +83,32 @@ const TVShow = mongoose.model('TVShow', documentSchema, 'tvshows');
 const Anime = mongoose.model('Anime', documentSchema, 'anime');
 const Upcoming = mongoose.model('Upcoming', documentSchema, 'upcoming');
 
-const customCollectionSchema = new mongoose.Schema({
-  id: { type: String, required: true, unique: true },
-  title: String,
-  slug: String,
-  description: String,
-  poster: String,
-  backdrop: String,
-  items: Array
-}, {
-  timestamps: true,
-  strict: false
-});
-
-const CustomCollection = mongoose.model('CustomCollection', customCollectionSchema, 'custom_collections');
-
 const modelsMap = {
   movies: Movie,
   tvshows: TVShow,
   anime: Anime,
-  upcoming: Upcoming,
-  custom_collections: CustomCollection,
-  collections: CustomCollection
+  upcoming: Upcoming
 };
+
+// ── Movie Request Schema ───────────────────────────────────────────────────────
+const movieRequestSchema = new mongoose.Schema({
+  requesterName: { type: String, required: true },
+  movieName: { type: String, required: true },
+  type: { type: String, enum: ['movie', 'series', 'anime'], default: 'movie' },
+  moreDetails: { type: String, default: '' },
+  status: { type: String, enum: ['pending', 'complete', 'rejected'], default: 'pending' },
+  adminNote: { type: String, default: '' }
+}, {
+  timestamps: true
+});
+
+const MovieRequest = mongoose.model('MovieRequest', movieRequestSchema, 'movie_requests');
 
 // Formatting helper to match the exact schema expected by client apps
 function formatDocument(doc) {
   if (!doc) return null;
   const obj = doc.toObject ? doc.toObject() : doc;
-  
+
   // Access the custom 'id' field directly from the Mongoose document to bypass the virtual 'id' getter conflict
   let id = '';
   if (doc.get && typeof doc.get === 'function') {
@@ -123,7 +120,7 @@ function formatDocument(doc) {
 
   const createdAt = obj.createdAt ? obj.createdAt.toISOString() : new Date().toISOString();
   const updatedAt = obj.updatedAt ? obj.updatedAt.toISOString() : new Date().toISOString();
-  
+
   return {
     ...obj,
     _id: undefined,
@@ -191,8 +188,8 @@ function generateBotHTML(movie, requestUrl) {
   const isTV = movie.type === 'tv' || movie.type === 'tvshow';
   const schemaType = isTV ? 'TVSeries' : 'Movie';
   const title = `${movie.title} with Sinhala Subtitles | ${movie.title} සිංහල උපසිරැසි සමඟ | CMoviez`;
-  const description = movie.description 
-    ? movie.description.substring(0, 160) 
+  const description = movie.description
+    ? movie.description.substring(0, 160)
     : `Download ${movie.title} with Sinhala Subtitles for free on CMoviez. High quality movie downloads.`;
   const poster = movie.poster || movie.backdrop || '';
   const year = movie.year || '';
@@ -372,7 +369,7 @@ app.get('/api/collections/:table/documents', async (req, res) => {
       .sort(sortQuery)
       .skip(offset)
       .limit(limit);
-      
+
     const total = await Model.countDocuments(query);
 
     return res.json({
@@ -381,38 +378,6 @@ app.get('/api/collections/:table/documents', async (req, res) => {
     });
   } catch (error) {
     console.error('List documents error:', error);
-    return res.status(500).json({ error: error.message });
-  }
-});
-
-// Search across all items (Movies, TV Shows, Anime, Upcoming)
-app.get('/api/search-all', async (req, res) => {
-  const queryStr = req.query.q || '';
-  if (!queryStr.trim()) {
-    return res.json({ results: [] });
-  }
-
-  try {
-    const regex = new RegExp(queryStr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-    const searchFilter = { title: regex };
-
-    const [movies, tvshows, anime, upcoming] = await Promise.all([
-      Movie.find(searchFilter).limit(20),
-      TVShow.find(searchFilter).limit(20),
-      Anime.find(searchFilter).limit(20),
-      Upcoming.find(searchFilter).limit(20)
-    ]);
-
-    const combined = [
-      ...movies.map(d => ({ ...formatDocument(d), mediaType: 'movies' })),
-      ...tvshows.map(d => ({ ...formatDocument(d), mediaType: 'tvshows' })),
-      ...anime.map(d => ({ ...formatDocument(d), mediaType: 'anime' })),
-      ...upcoming.map(d => ({ ...formatDocument(d), mediaType: 'upcoming' }))
-    ];
-
-    return res.json({ results: combined });
-  } catch (error) {
-    console.error('Search all error:', error);
     return res.status(500).json({ error: error.message });
   }
 });
@@ -484,7 +449,7 @@ app.put('/api/collections/:table/documents/:id', async (req, res) => {
 
   try {
     const body = req.body;
-    
+
     // Clean up incoming object properties to prevent overriding system attributes directly
     delete body.id;
     delete body._id;
@@ -539,6 +504,76 @@ app.delete('/api/collections/:table/documents/:id', async (req, res) => {
     return res.json({ success: true, id });
   } catch (error) {
     console.error('Delete document error:', error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// ── Movie Request Routes ───────────────────────────────────────────────────────
+
+// Submit a request (public)
+app.post('/api/requests', async (req, res) => {
+  try {
+    const { requesterName, movieName, type, moreDetails } = req.body;
+    if (!requesterName || !movieName) {
+      return res.status(400).json({ error: 'requesterName and movieName are required' });
+    }
+    const newRequest = new MovieRequest({ requesterName, movieName, type: type || 'movie', moreDetails: moreDetails || '' });
+    await newRequest.save();
+    return res.status(201).json(newRequest);
+  } catch (error) {
+    console.error('Submit request error:', error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// List all requests (admin)
+app.get('/api/requests', async (req, res) => {
+  if (!verifyAuth(req)) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const status = req.query.status || '';
+    const query = status ? { status } : {};
+    const requests = await MovieRequest.find(query).sort({ createdAt: -1 });
+
+    // Stats
+    const total = await MovieRequest.countDocuments();
+    const pending = await MovieRequest.countDocuments({ status: 'pending' });
+    const complete = await MovieRequest.countDocuments({ status: 'complete' });
+    const rejected = await MovieRequest.countDocuments({ status: 'rejected' });
+
+    return res.json({ requests, stats: { total, pending, complete, rejected } });
+  } catch (error) {
+    console.error('List requests error:', error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// Update request status (admin)
+app.put('/api/requests/:id', async (req, res) => {
+  if (!verifyAuth(req)) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const { status, adminNote } = req.body;
+    const request = await MovieRequest.findByIdAndUpdate(
+      req.params.id,
+      { ...(status && { status }), ...(adminNote !== undefined && { adminNote }) },
+      { new: true }
+    );
+    if (!request) return res.status(404).json({ error: 'Not found' });
+    return res.json(request);
+  } catch (error) {
+    console.error('Update request error:', error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// Delete request (admin)
+app.delete('/api/requests/:id', async (req, res) => {
+  if (!verifyAuth(req)) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const result = await MovieRequest.findByIdAndDelete(req.params.id);
+    if (!result) return res.status(404).json({ error: 'Not found' });
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Delete request error:', error);
     return res.status(500).json({ error: error.message });
   }
 });
@@ -605,10 +640,10 @@ app.get('/watch/:slug/season/:season/episode/:episode', async (req, res) => {
 app.get('/sitemap*.xml', (req, res) => {
   const distFilePath = path.join(__dirname, '../film/dist', req.path);
   const publicFilePath = path.join(__dirname, '../film/public', req.path);
-  
+
   res.setHeader('Content-Type', 'application/xml; charset=utf-8');
   res.setHeader('Cache-Control', 'public, max-age=3600');
-  
+
   res.sendFile(distFilePath, (err) => {
     if (err) {
       res.sendFile(publicFilePath, (err2) => {
@@ -650,8 +685,8 @@ const VALID_SPA_ROUTES = [
   '/final-download',
   '/years',
   '/actors',
+  '/request',
 ];
-
 // Patterns that match dynamic SPA routes (with parameters)
 const VALID_SPA_PATTERNS = [
   /^\/watch\/[\w-]+$/,                                    // /watch/:slug
