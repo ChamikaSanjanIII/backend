@@ -15,11 +15,43 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// Allowed Origins list
+const ALLOWED_ORIGINS = [
+  'https://cmoviez.com',
+  'https://www.cmoviez.com',
+  'http://cmoviez.com',
+  'https://cmovie.xyz',
+  'https://www.cmovie.xyz',
+  'http://cmovie.xyz',
+  'https://dashboard.cmoviez.com',
+  'http://dashboard.cmoviez.com',
+  'http://localhost:3000',
+  'http://localhost:3005',
+  'http://localhost:5173',
+  'http://localhost:5000'
+];
+
 // Middleware
 app.use(cors({
-  origin: process.env.CORS_ORIGIN === '*' ? '*' : (process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : '*'),
-  methods: 'GET,POST,PUT,DELETE,OPTIONS',
-  allowedHeaders: 'Content-Type,Authorization'
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps, server-to-server or cURL)
+    if (!origin) return callback(null, true);
+
+    const isExplicitAllowed = ALLOWED_ORIGINS.includes(origin) || 
+      (process.env.CORS_ORIGIN && process.env.CORS_ORIGIN.split(',').includes(origin));
+
+    // Allow specific testing IP (192.168.1.73) and localhost
+    const isSpecificLocalIP = /^http:\/\/(localhost|127\.0\.0\.1|192\.168\.1\.73)(:\d+)?$/.test(origin);
+
+    if (isExplicitAllowed || isSpecificLocalIP) {
+      callback(null, true);
+    } else {
+      callback(new Error('Blocked by CORS policy: Origin not allowed'));
+    }
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
 }));
 app.use(express.json());
 
