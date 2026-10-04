@@ -109,10 +109,10 @@ export async function generateSitemaps() {
 
     // ── Static Pages (Only Home, Movies, TV Shows, and Anime are indexed for SEO)
     const staticPages = [
-      { url: '/',              updatedAt: now },
-      { url: '/movies',        updatedAt: now },
-      { url: '/tv-shows',      updatedAt: now },
-      { url: '/anime',         updatedAt: now }
+      { url: '/', updatedAt: now },
+      { url: '/movies', updatedAt: now },
+      { url: '/tv-shows', updatedAt: now },
+      { url: '/anime', updatedAt: now }
     ];
     saveFile('sitemap-main.xml', buildUrlSetXml(staticPages));
 
@@ -145,10 +145,10 @@ export async function generateSitemaps() {
 
     // ── Index ───────────────────────────────────────────────────────────────────
     saveFile('sitemap.xml', buildIndexXml([
-      { url: '/sitemap-main.xml',     lastmod: now },
-      { url: '/sitemap-movies.xml',   lastmod: now },
-      { url: '/sitemap-tvshows.xml',  lastmod: now },
-      { url: '/sitemap-anime.xml',    lastmod: now },
+      { url: '/sitemap-main.xml', lastmod: now },
+      { url: '/sitemap-movies.xml', lastmod: now },
+      { url: '/sitemap-tvshows.xml', lastmod: now },
+      { url: '/sitemap-anime.xml', lastmod: now },
     ]));
 
     console.log(`[Sitemap] Generation complete. Total: ${movies.length + tvshows.length + anime.length} entries.`);

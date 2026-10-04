@@ -20,9 +20,9 @@ const ALLOWED_ORIGINS = [
   'https://cmoviez.com',
   'https://www.cmoviez.com',
   'http://cmoviez.com',
-  'https://cmovie.xyz',
-  'https://www.cmovie.xyz',
-  'http://cmovie.xyz',
+  'https://cmoviez.com',
+  'https://www.cmoviez.com',
+  'http://cmoviez.com',
   'https://dashboard.cmoviez.com',
   'http://dashboard.cmoviez.com',
   'http://localhost:3000',
@@ -344,7 +344,7 @@ app.get('/api', (req, res) => {
 // Login
 app.post('/api/auth/login', (req, res) => {
   const { email, password } = req.body;
-  const adminEmail = process.env.ADMIN_EMAIL || 'admin@cmovie.xyz';
+  const adminEmail = process.env.ADMIN_EMAIL || 'admin@cmoviez.com';
   const adminPassword = process.env.ADMIN_PASSWORD || 'admin';
   const adminToken = process.env.ADMIN_TOKEN || 'secret-admin-token-123';
 
@@ -365,7 +365,7 @@ app.get('/api/auth/session', (req, res) => {
   }
   return res.json({
     success: true,
-    user: { email: process.env.ADMIN_EMAIL || 'admin@cmovie.xyz', name: 'Admin' }
+    user: { email: process.env.ADMIN_EMAIL || 'admin@cmoviez.com', name: 'Admin' }
   });
 });
 
