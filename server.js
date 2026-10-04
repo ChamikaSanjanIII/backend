@@ -572,13 +572,26 @@ app.get('/api/requests/stats', async (req, res) => {
   }
 });
 
-// List all requests (admin)
+// Public list of recent requests for user status view
+app.get('/api/requests/public', async (req, res) => {
+  try {
+    const requests = await MovieRequest.find({})
+      .sort({ createdAt: -1 })
+      .limit(100)
+      .select('requesterName movieName type status adminNote createdAt');
+    return res.json(requests);
+  } catch (error) {
+    console.error('Public requests error:', error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// List all requests (Public for all users & Admin)
 app.get('/api/requests', async (req, res) => {
-  if (!verifyAuth(req)) return res.status(401).json({ error: 'Unauthorized' });
   try {
     const status = req.query.status || '';
     const query = status ? { status } : {};
-    const requests = await MovieRequest.find(query).sort({ createdAt: -1 });
+    const requests = await MovieRequest.find(query).sort({ createdAt: -1 }).limit(100);
 
     // Stats
     const total = await MovieRequest.countDocuments();
