@@ -74,6 +74,7 @@ const documentSchema = new mongoose.Schema({
   type: { type: String, default: 'movie' },
   genres: mongoose.Schema.Types.Mixed,
   cast: mongoose.Schema.Types.Mixed,
+  castWithPhotos: mongoose.Schema.Types.Mixed,
   description: String,
   poster: String,
   backdrop: String,
