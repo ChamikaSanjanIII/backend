@@ -28,20 +28,13 @@ const collections = [
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-async function fetchCastFromTMDB(tmdbId, isTV) {
+async function fetchCreditsFromTMDB(tmdbId, isTV) {
   try {
-    const endpoint = isTV ? `https://api.themoviedb.org/3/tv/${tmdbId}/credits?api_key=${TMDB_API_KEY}` : `https://api.themoviedb.org/3/movie/${tmdbId}/credits?api_key=${TMDB_API_KEY}`;
+    const endpoint = isTV ? `https://api.themoviedb.org/3/tv/${tmdbId}?api_key=${TMDB_API_KEY}&append_to_response=credits` : `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${TMDB_API_KEY}&append_to_response=credits`;
     const res = await fetch(endpoint);
     if (!res.ok) return null;
     const data = await res.json();
-    if (!data || !data.cast) return null;
-
-    return data.cast.slice(0, 15).map(c => ({
-      name: c.name,
-      character: c.character || '',
-      photo: c.profile_path ? `https://image.tmdb.org/t/p/w185${c.profile_path}` : null,
-      profile_path: c.profile_path
-    }));
+    return data;
   } catch (err) {
     console.error(`Error fetching TMDB credits for ${tmdbId}:`, err.message);
     return null;
@@ -67,7 +60,7 @@ async function runSync() {
   const mongoUri = process.env.MONGO_URI || 'mongodb://localhost:27017/cmoviez';
   console.log('Connecting to MongoDB:', mongoUri);
   await mongoose.connect(mongoUri);
-  console.log('Connected to MongoDB. Starting Cast Photos Sync...\n');
+  console.log('Connected to MongoDB. Starting Cast, Director & Studio Photos Sync...\n');
 
   let totalUpdated = 0;
 
@@ -86,21 +79,63 @@ async function runSync() {
       }
 
       if (tmdbId) {
-        const castCredits = await fetchCastFromTMDB(tmdbId, isTV);
-        if (castCredits && castCredits.length > 0) {
-          doc.castWithPhotos = castCredits;
-          
-          doc.cast = castCredits.map(c => c.character ? `${c.name} (${c.character})` : c.name);
-          
+        const fullDetails = await fetchCreditsFromTMDB(tmdbId, isTV);
+        if (fullDetails) {
+          // 1. Cast photos
+          if (fullDetails.credits?.cast) {
+            const castCredits = fullDetails.credits.cast.slice(0, 15).map(c => ({
+              name: c.name,
+              character: c.character || '',
+              photo: c.profile_path ? `https://image.tmdb.org/t/p/w500${c.profile_path}` : null,
+              profile_path: c.profile_path
+            }));
+            doc.castWithPhotos = castCredits;
+            doc.cast = castCredits.map(c => c.character ? `${c.name} (${c.character})` : c.name);
+          }
+
+          // 2. Director photos
+          if (fullDetails.credits?.crew) {
+            const directors = fullDetails.credits.crew.filter(c => c.job === 'Director' || c.department === 'Directing');
+            if (directors.length > 0) {
+              const directorsWithPhotos = directors.map(d => ({
+                name: d.name,
+                job: 'Director',
+                photo: d.profile_path ? `https://image.tmdb.org/t/p/w500${d.profile_path}` : null,
+                profile_path: d.profile_path || null
+              }));
+              doc.directorsWithPhotos = directorsWithPhotos;
+              const directorPhotosMap = {};
+              directorsWithPhotos.forEach(d => { if (d.name && d.photo) directorPhotosMap[d.name] = d.photo; });
+              doc.directorPhotos = directorPhotosMap;
+              if (!doc.director) {
+                doc.director = directors.map(d => d.name).join(', ');
+              }
+            }
+          }
+
+          // 3. Studio logos
+          const companies = fullDetails.production_companies || fullDetails.networks || [];
+          if (companies.length > 0) {
+            const studiosWithLogos = companies.map(s => ({
+              name: s.name,
+              logo: s.logo_path ? `https://image.tmdb.org/t/p/w500${s.logo_path}` : null,
+              logo_path: s.logo_path || null
+            }));
+            doc.studios = studiosWithLogos;
+            const studioLogosMap = {};
+            studiosWithLogos.forEach(s => { if (s.name && s.logo) studioLogosMap[s.name] = s.logo; });
+            doc.studioLogos = studioLogosMap;
+          }
+
           if (!doc.tmdbId) {
             doc.tmdbId = String(tmdbId);
           }
 
           await doc.save();
           totalUpdated++;
-          console.log(`✅ [${item.name}] Updated cast photos for: "${doc.title}" (${castCredits.length} cast members)`);
+          console.log(`✅ [${item.name}] Updated metadata & photos for: "${doc.title}"`);
         } else {
-          console.log(`⚠️ [${item.name}] No cast credits found for: "${doc.title}"`);
+          console.log(`⚠️ [${item.name}] No TMDB details found for: "${doc.title}"`);
         }
       } else {
         console.log(`❌ [${item.name}] Could not find TMDB ID for: "${doc.title}"`);
