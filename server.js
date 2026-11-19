@@ -582,6 +582,46 @@ app.post('/api/collections/:table/documents/:id/like', async (req, res) => {
   }
 });
 
+// Public Track Download Count (Per-Link + Total Atomic Counter)
+app.post('/api/collections/:table/documents/:id/track-download', async (req, res) => {
+  const { table, id } = req.params;
+  const Model = modelsMap[table];
+  if (!Model) {
+    return res.status(400).json({ error: 'Invalid collection name' });
+  }
+
+  try {
+    const rawKey = String(req.body?.key || 'general').trim();
+    const safeKey = rawKey.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80) || 'general';
+    const isSubtitle = Boolean(req.body?.isSubtitle);
+
+    const incObj = {
+      downloads: 1,
+      [`linkDownloads.${safeKey}`]: 1
+    };
+    if (isSubtitle) {
+      incObj.subtitleDownloads = 1;
+    }
+
+    let doc = await Model.findOneAndUpdate({ id }, { $inc: incObj }, { new: true });
+    if (!doc && mongoose.Types.ObjectId.isValid(id)) {
+      doc = await Model.findOneAndUpdate({ _id: id }, { $inc: incObj }, { new: true });
+    }
+    if (!doc) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+
+    return res.json({
+      downloads: Number(doc.downloads) || 0,
+      subtitleDownloads: Number(doc.subtitleDownloads) || 0,
+      linkDownloads: doc.linkDownloads || {}
+    });
+  } catch (error) {
+    console.error('Track download error:', error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
 // Delete Document
 app.delete('/api/collections/:table/documents/:id', async (req, res) => {
   if (!verifyAuth(req)) {
