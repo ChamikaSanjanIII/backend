@@ -561,9 +561,9 @@ app.post('/api/collections/:table/documents/:id/like', async (req, res) => {
     const action = req.body?.action === 'unlike' ? 'unlike' : 'like';
     const delta = action === 'unlike' ? -1 : 1;
 
-    let doc = await Model.findOneAndUpdate({ id }, { $inc: { likes: delta } }, { new: true });
+    let doc = await Model.findOneAndUpdate({ id }, { $inc: { likes: delta } }, { new: true, timestamps: false });
     if (!doc && mongoose.Types.ObjectId.isValid(id)) {
-      doc = await Model.findOneAndUpdate({ _id: id }, { $inc: { likes: delta } }, { new: true });
+      doc = await Model.findOneAndUpdate({ _id: id }, { $inc: { likes: delta } }, { new: true, timestamps: false });
     }
     if (!doc) {
       return res.status(404).json({ error: 'Not found' });
@@ -572,7 +572,7 @@ app.post('/api/collections/:table/documents/:id/like', async (req, res) => {
     let finalLikes = Number(doc.likes) || 0;
     if (finalLikes < 0) {
       finalLikes = 0;
-      await Model.updateOne({ _id: doc._id }, { $set: { likes: 0 } });
+      await Model.updateOne({ _id: doc._id }, { $set: { likes: 0 } }, { timestamps: false });
     }
 
     return res.json({ likes: finalLikes });
@@ -603,9 +603,9 @@ app.post('/api/collections/:table/documents/:id/track-download', async (req, res
       incObj.subtitleDownloads = 1;
     }
 
-    let doc = await Model.findOneAndUpdate({ id }, { $inc: incObj }, { new: true });
+    let doc = await Model.findOneAndUpdate({ id }, { $inc: incObj }, { new: true, timestamps: false });
     if (!doc && mongoose.Types.ObjectId.isValid(id)) {
-      doc = await Model.findOneAndUpdate({ _id: id }, { $inc: incObj }, { new: true });
+      doc = await Model.findOneAndUpdate({ _id: id }, { $inc: incObj }, { new: true, timestamps: false });
     }
     if (!doc) {
       return res.status(404).json({ error: 'Not found' });
