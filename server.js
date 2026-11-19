@@ -561,19 +561,18 @@ app.post('/api/collections/:table/documents/:id/like', async (req, res) => {
     const action = req.body?.action === 'unlike' ? 'unlike' : 'like';
     const delta = action === 'unlike' ? -1 : 1;
 
-    let doc = await Model.findOneAndUpdate({ id }, { $inc: { likes: delta } }, { new: true, timestamps: false });
+    // Use native MongoDB collection driver so Mongoose NEVER touches updatedAt
+    let doc = await Model.findOne({ id }, { _id: 1, likes: 1 }).lean();
     if (!doc && mongoose.Types.ObjectId.isValid(id)) {
-      doc = await Model.findOneAndUpdate({ _id: id }, { $inc: { likes: delta } }, { new: true, timestamps: false });
+      doc = await Model.findOne({ _id: id }, { _id: 1, likes: 1 }).lean();
     }
     if (!doc) {
       return res.status(404).json({ error: 'Not found' });
     }
 
-    let finalLikes = Number(doc.likes) || 0;
-    if (finalLikes < 0) {
-      finalLikes = 0;
-      await Model.updateOne({ _id: doc._id }, { $set: { likes: 0 } }, { timestamps: false });
-    }
+    const currentLikes = Number(doc.likes) || 0;
+    const finalLikes = Math.max(0, currentLikes + delta);
+    await Model.collection.updateOne({ _id: doc._id }, { $set: { likes: finalLikes } });
 
     return res.json({ likes: finalLikes });
   } catch (error) {
@@ -603,18 +602,20 @@ app.post('/api/collections/:table/documents/:id/track-download', async (req, res
       incObj.subtitleDownloads = 1;
     }
 
-    let doc = await Model.findOneAndUpdate({ id }, { $inc: incObj }, { new: true, timestamps: false });
+    // Use native MongoDB collection driver so Mongoose NEVER touches updatedAt
+    let doc = await Model.findOne({ id }, { _id: 1, downloads: 1, subtitleDownloads: 1, linkDownloads: 1 }).lean();
     if (!doc && mongoose.Types.ObjectId.isValid(id)) {
-      doc = await Model.findOneAndUpdate({ _id: id }, { $inc: incObj }, { new: true, timestamps: false });
+      doc = await Model.findOne({ _id: id }, { _id: 1, downloads: 1, subtitleDownloads: 1, linkDownloads: 1 }).lean();
     }
     if (!doc) {
       return res.status(404).json({ error: 'Not found' });
     }
 
+    await Model.collection.updateOne({ _id: doc._id }, { $inc: incObj });
+
     return res.json({
-      downloads: Number(doc.downloads) || 0,
-      subtitleDownloads: Number(doc.subtitleDownloads) || 0,
-      linkDownloads: doc.linkDownloads || {}
+      downloads: (Number(doc.downloads) || 0) + 1,
+      subtitleDownloads: (Number(doc.subtitleDownloads) || 0) + (isSubtitle ? 1 : 0)
     });
   } catch (error) {
     console.error('Track download error:', error);
