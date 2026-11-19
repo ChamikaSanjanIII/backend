@@ -510,12 +510,33 @@ app.put('/api/collections/:table/documents/:id', async (req, res) => {
     delete body.$createdAt;
     delete body.$updatedAt;
 
-    let doc = await Model.findOneAndUpdate({ id }, { $set: body }, { new: true });
-    if (!doc && mongoose.Types.ObjectId.isValid(id)) {
-      doc = await Model.findOneAndUpdate({ _id: id }, { $set: body }, { new: true });
-    }
-    if (!doc) {
-      return res.status(404).json({ error: 'Not found' });
+    // If only updating trending/featured flags, preserve updatedAt so it doesn't jump to "Just Added / Recently Updated"
+    const NON_CONTENT_KEYS = new Set([
+      'trendingRank', 'isTrending', 'isFeatured', 'isFeaturedHome',
+      'isFeaturedMovies', 'isFeaturedTV', 'isFeaturedAnime', 'featuredRank'
+    ]);
+    const bodyKeys = Object.keys(body);
+    const isMetaOnlyUpdate = bodyKeys.length > 0 && bodyKeys.every(k => NON_CONTENT_KEYS.has(k));
+
+    let doc;
+    if (isMetaOnlyUpdate) {
+      let existing = await Model.findOne({ id }, { _id: 1 }).lean();
+      if (!existing && mongoose.Types.ObjectId.isValid(id)) {
+        existing = await Model.findOne({ _id: id }, { _id: 1 }).lean();
+      }
+      if (!existing) {
+        return res.status(404).json({ error: 'Not found' });
+      }
+      await Model.collection.updateOne({ _id: existing._id }, { $set: body });
+      doc = await Model.findById(existing._id);
+    } else {
+      doc = await Model.findOneAndUpdate({ id }, { $set: body }, { new: true });
+      if (!doc && mongoose.Types.ObjectId.isValid(id)) {
+        doc = await Model.findOneAndUpdate({ _id: id }, { $set: body }, { new: true });
+      }
+      if (!doc) {
+        return res.status(404).json({ error: 'Not found' });
+      }
     }
 
     // Auto-regenerate sitemap in background
