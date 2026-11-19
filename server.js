@@ -442,6 +442,20 @@ app.get('/api/collections/:table/documents/:id', async (req, res) => {
   }
 });
 
+// Get single movie/series by slug across all collections (for fast SSR & SEO)
+app.get('/api/movie-by-slug/:slug', async (req, res) => {
+  try {
+    const movie = await findMovieBySlug(req.params.slug);
+    if (!movie) {
+      return res.status(404).json({ error: 'Movie not found' });
+    }
+    return res.json(formatDocument(movie));
+  } catch (error) {
+    console.error('movie-by-slug error:', error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
 // Create Document
 app.post('/api/collections/:table/documents', async (req, res) => {
   if (!verifyAuth(req)) {
@@ -510,6 +524,39 @@ app.put('/api/collections/:table/documents/:id', async (req, res) => {
     return res.json(formatDocument(doc));
   } catch (error) {
     console.error('Update document error:', error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// Public Like / Unlike Document (Atomic Counter)
+app.post('/api/collections/:table/documents/:id/like', async (req, res) => {
+  const { table, id } = req.params;
+  const Model = modelsMap[table];
+  if (!Model) {
+    return res.status(400).json({ error: 'Invalid collection name' });
+  }
+
+  try {
+    const action = req.body?.action === 'unlike' ? 'unlike' : 'like';
+    const delta = action === 'unlike' ? -1 : 1;
+
+    let doc = await Model.findOneAndUpdate({ id }, { $inc: { likes: delta } }, { new: true });
+    if (!doc && mongoose.Types.ObjectId.isValid(id)) {
+      doc = await Model.findOneAndUpdate({ _id: id }, { $inc: { likes: delta } }, { new: true });
+    }
+    if (!doc) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+
+    let finalLikes = Number(doc.likes) || 0;
+    if (finalLikes < 0) {
+      finalLikes = 0;
+      await Model.updateOne({ _id: doc._id }, { $set: { likes: 0 } });
+    }
+
+    return res.json({ likes: finalLikes });
+  } catch (error) {
+    console.error('Like document error:', error);
     return res.status(500).json({ error: error.message });
   }
 });
