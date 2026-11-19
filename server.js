@@ -528,6 +528,27 @@ app.put('/api/collections/:table/documents/:id', async (req, res) => {
   }
 });
 
+// Public Get Like Count
+app.get('/api/collections/:table/documents/:id/like', async (req, res) => {
+  const { table, id } = req.params;
+  const Model = modelsMap[table];
+  if (!Model) {
+    return res.status(400).json({ error: 'Invalid collection name' });
+  }
+  try {
+    let doc = await Model.findOne({ id }, { likes: 1 });
+    if (!doc && mongoose.Types.ObjectId.isValid(id)) {
+      doc = await Model.findOne({ _id: id }, { likes: 1 });
+    }
+    if (!doc) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    return res.json({ likes: Math.max(0, Number(doc.likes) || 0) });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
 // Public Like / Unlike Document (Atomic Counter)
 app.post('/api/collections/:table/documents/:id/like', async (req, res) => {
   const { table, id } = req.params;
