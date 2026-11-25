@@ -474,6 +474,16 @@ app.post('/api/collections/:table/documents', async (req, res) => {
     const id = body.id || new mongoose.Types.ObjectId().toString();
     delete body.id;
 
+    if (!body.lastUpdateNote) {
+      if (table === 'tvshows') {
+        body.lastUpdateNote = 'New TV Series Added';
+      } else if (table === 'anime') {
+        body.lastUpdateNote = 'New Anime Added';
+      } else {
+        body.lastUpdateNote = 'New Movie Added';
+      }
+    }
+
     const newDoc = new Model({ ...body, id });
     await newDoc.save();
 
@@ -486,6 +496,128 @@ app.post('/api/collections/:table/documents', async (req, res) => {
     return res.status(500).json({ error: error.message });
   }
 });
+
+// Helper: normalize episodes to detect ONLY episode add/delete or episode download link changes
+function normalizeEpisodeDownloadLinks(val) {
+  if (!val) return {};
+  let parsed = val;
+  if (typeof parsed === 'string') {
+    const trimmed = parsed.trim();
+    if (!trimmed) return {};
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch {
+      return trimmed;
+    }
+  }
+  if (Array.isArray(parsed)) {
+    return parsed
+      .map(item => normalizeEpisodeDownloadLinks(item))
+      .filter(item => item !== '' && item !== null && item !== undefined);
+  }
+  if (typeof parsed === 'object' && parsed !== null) {
+    const out = {};
+    for (const key of Object.keys(parsed).sort()) {
+      const v = parsed[key];
+      if (v === null || v === undefined) continue;
+      if (typeof v === 'string') {
+        const t = v.trim();
+        if (t) out[key] = t;
+      } else {
+        const norm = normalizeEpisodeDownloadLinks(v);
+        if (
+          (Array.isArray(norm) && norm.length > 0) ||
+          (typeof norm === 'object' && norm !== null && Object.keys(norm).length > 0) ||
+          (typeof norm === 'string' && norm.length > 0)
+        ) {
+          out[key] = norm;
+        }
+      }
+    }
+    return out;
+  }
+  return String(parsed).trim();
+}
+
+function parseNormalizedEpisodes(raw) {
+  if (!raw) return [];
+  let arr = raw;
+  if (typeof arr === 'string') {
+    const trimmed = arr.trim();
+    if (!trimmed) return [];
+    try {
+      arr = JSON.parse(trimmed);
+    } catch {
+      return [];
+    }
+  }
+  if (!Array.isArray(arr)) return [];
+
+  // Flatten nested seasons structure if present
+  const flat = [];
+  if (arr.length > 0 && (arr[0]?.episodes || arr[0]?.Episodes || arr[0]?.eps)) {
+    arr.forEach((s, idx) => {
+      const sNum = Number(s.season ?? s.seasonNumber ?? idx + 1) || 1;
+      const eps = s.episodes || s.Episodes || s.eps || [];
+      if (Array.isArray(eps)) {
+        eps.forEach(ep => flat.push({ ...ep, season: Number(ep.season) || sNum }));
+      }
+    });
+  } else {
+    arr.forEach(ep => {
+      if (ep && typeof ep === 'object') flat.push(ep);
+    });
+  }
+
+  const normalized = flat.map(ep => {
+    const dl = String(
+      ep.downloadUrl || ep.videoUrl || ep.url || ep.link || ep.src ||
+      ep.streamUrl || ep.VideoUrl || ep.download || ep.dl || ''
+    ).trim();
+    return {
+      s: Number(ep.season) || 1,
+      e: Number(ep.episode) || 0,
+      dl,
+      links: normalizeEpisodeDownloadLinks(ep.download_links)
+    };
+  });
+
+  normalized.sort((a, b) => (a.s - b.s) || (a.e - b.e));
+  return normalized;
+}
+
+function episodeHasDownloadLink(ep) {
+  if (!ep) return false;
+  if (ep.dl && ep.dl.length > 0) return true;
+  if (ep.links && typeof ep.links === 'object' && Object.keys(ep.links).length > 0) return true;
+  if (typeof ep.links === 'string' && ep.links.length > 0) return true;
+  return false;
+}
+
+function formatAddedEpisodesNote(addedEps) {
+  if (!Array.isArray(addedEps) || addedEps.length === 0) return null;
+  const bySeason = new Map();
+  for (const ep of addedEps) {
+    const s = ep.s || 1;
+    if (!bySeason.has(s)) bySeason.set(s, []);
+    if (ep.e > 0 && !bySeason.get(s).includes(ep.e)) {
+      bySeason.get(s).push(ep.e);
+    }
+  }
+  const seasons = Array.from(bySeason.keys()).sort((a, b) => a - b);
+  if (seasons.length === 1) {
+    const s = seasons[0];
+    const eps = bySeason.get(s).sort((a, b) => a - b);
+    if (eps.length === 0) return `Season ${s} Updated`;
+    if (eps.length === 1) return `Season ${s} • Episode ${eps[0]} Added`;
+    return `Season ${s} • Episodes ${eps.join(', ')} Added`;
+  }
+  const parts = seasons.map(s => {
+    const eps = bySeason.get(s).sort((a, b) => a - b);
+    return eps.length > 0 ? `S${s} E${eps.join(', ')}` : `S${s}`;
+  });
+  return `${parts.join(' & ')} Added`;
+}
 
 // Update Document
 app.put('/api/collections/:table/documents/:id', async (req, res) => {
@@ -511,34 +643,60 @@ app.put('/api/collections/:table/documents/:id', async (req, res) => {
     delete body.$createdAt;
     delete body.$updatedAt;
 
-    // If only updating trending/featured flags, preserve updatedAt so it doesn't jump to "Just Added / Recently Updated"
-    const NON_CONTENT_KEYS = new Set([
-      'trendingRank', 'isTrending', 'isFeatured', 'isFeaturedHome',
-      'isFeaturedMovies', 'isFeaturedTV', 'isFeaturedAnime', 'featuredRank'
-    ]);
-    const bodyKeys = Object.keys(body);
-    const isMetaOnlyUpdate = bodyKeys.length > 0 && bodyKeys.every(k => NON_CONTENT_KEYS.has(k));
+    let existing = await Model.findOne({ id }).lean();
+    if (!existing && mongoose.Types.ObjectId.isValid(id)) {
+      existing = await Model.findOne({ _id: id }).lean();
+    }
+    if (!existing) {
+      return res.status(404).json({ error: 'Not found' });
+    }
 
-    let doc;
-    if (isMetaOnlyUpdate) {
-      let existing = await Model.findOne({ id }, { _id: 1 }).lean();
-      if (!existing && mongoose.Types.ObjectId.isValid(id)) {
-        existing = await Model.findOne({ _id: id }, { _id: 1 }).lean();
-      }
-      if (!existing) {
-        return res.status(404).json({ error: 'Not found' });
-      }
-      await Model.collection.updateOne({ _id: existing._id }, { $set: body });
-      doc = await Model.findById(existing._id);
-    } else {
-      doc = await Model.findOneAndUpdate({ id }, { $set: body }, { new: true });
-      if (!doc && mongoose.Types.ObjectId.isValid(id)) {
-        doc = await Model.findOneAndUpdate({ _id: id }, { $set: body }, { new: true });
-      }
-      if (!doc) {
-        return res.status(404).json({ error: 'Not found' });
+    // ONLY bump updatedAt if an episode was added/deleted OR an episode's download link changed.
+    // All other edits (title, poster, cast, trending/featured, movie links, etc.) preserve updatedAt.
+    let shouldBumpUpdatedAt = false;
+    let computedUpdateNote = null;
+
+    if (Object.prototype.hasOwnProperty.call(body, 'episodes')) {
+      const oldEps = parseNormalizedEpisodes(existing.episodes);
+      const newEps = parseNormalizedEpisodes(body.episodes);
+      const oldSig = JSON.stringify(oldEps);
+      const newSig = JSON.stringify(newEps);
+
+      if (oldSig !== newSig) {
+        shouldBumpUpdatedAt = true;
+
+        // Detect which episodes were added or had download links added/updated in this save
+        const oldMap = new Map(oldEps.map(ep => [`${ep.s}-${ep.e}`, ep]));
+        const addedOrLinked = [];
+        for (const ep of newEps) {
+          const prev = oldMap.get(`${ep.s}-${ep.e}`);
+          if (!prev) {
+            addedOrLinked.push(ep);
+          } else if (
+            episodeHasDownloadLink(ep) &&
+            (prev.dl !== ep.dl || JSON.stringify(prev.links) !== JSON.stringify(ep.links))
+          ) {
+            addedOrLinked.push(ep);
+          }
+        }
+
+        if (addedOrLinked.length > 0) {
+          computedUpdateNote = formatAddedEpisodesNote(addedOrLinked);
+        }
       }
     }
+
+    const updatePayload = { ...body };
+    if (shouldBumpUpdatedAt) {
+      updatePayload.updatedAt = new Date();
+      if (computedUpdateNote) {
+        updatePayload.lastUpdateNote = computedUpdateNote;
+      }
+    }
+
+    // Use native MongoDB collection driver so Mongoose NEVER touches updatedAt unless explicitly set above
+    await Model.collection.updateOne({ _id: existing._id }, { $set: updatePayload });
+    const doc = await Model.findById(existing._id);
 
     // Auto-regenerate sitemap in background
     generateSitemaps().catch(err => console.error('[Sitemap] Auto-gen error:', err.message));
