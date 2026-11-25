@@ -476,11 +476,11 @@ app.post('/api/collections/:table/documents', async (req, res) => {
 
     if (!body.lastUpdateNote) {
       if (table === 'tvshows') {
-        body.lastUpdateNote = 'New TV Series Added';
+        body.lastUpdateNote = 'New TV series has been added with Sinhala subtitles.';
       } else if (table === 'anime') {
-        body.lastUpdateNote = 'New Anime Added';
+        body.lastUpdateNote = 'New anime has been added with Sinhala subtitles.';
       } else {
-        body.lastUpdateNote = 'New Movie Added';
+        body.lastUpdateNote = 'New movie has been added with Sinhala subtitles.';
       }
     }
 
@@ -578,7 +578,9 @@ function parseNormalizedEpisodes(raw) {
       s: Number(ep.season) || 1,
       e: Number(ep.episode) || 0,
       dl,
-      links: normalizeEpisodeDownloadLinks(ep.download_links)
+      links: normalizeEpisodeDownloadLinks(ep.download_links),
+      burned: normalizeEpisodeDownloadLinks(ep.burned_subtitle_links),
+      soft: normalizeEpisodeDownloadLinks(ep.softcode_subtitle_links)
     };
   });
 
@@ -586,11 +588,20 @@ function parseNormalizedEpisodes(raw) {
   return normalized;
 }
 
+function hasNormalizedLinks(obj) {
+  if (!obj) return false;
+  if (typeof obj === 'string') return obj.length > 0;
+  if (Array.isArray(obj)) return obj.length > 0;
+  if (typeof obj === 'object') return Object.keys(obj).length > 0;
+  return false;
+}
+
 function episodeHasDownloadLink(ep) {
   if (!ep) return false;
   if (ep.dl && ep.dl.length > 0) return true;
-  if (ep.links && typeof ep.links === 'object' && Object.keys(ep.links).length > 0) return true;
-  if (typeof ep.links === 'string' && ep.links.length > 0) return true;
+  if (hasNormalizedLinks(ep.links)) return true;
+  if (hasNormalizedLinks(ep.burned)) return true;
+  if (hasNormalizedLinks(ep.soft)) return true;
   return false;
 }
 
@@ -608,15 +619,15 @@ function formatAddedEpisodesNote(addedEps) {
   if (seasons.length === 1) {
     const s = seasons[0];
     const eps = bySeason.get(s).sort((a, b) => a - b);
-    if (eps.length === 0) return `Season ${s} Updated`;
-    if (eps.length === 1) return `Season ${s} • Episode ${eps[0]} Added`;
-    return `Season ${s} • Episodes ${eps.join(', ')} Added`;
+    if (eps.length === 0) return `Season ${s} episodes have been updated with Sinhala subtitles.`;
+    if (eps.length === 1) return `Season ${s} Episode ${eps[0]} has been added with Sinhala subtitles.`;
+    return `Season ${s} Episodes ${eps.join(', ')} have been added with Sinhala subtitles.`;
   }
   const parts = seasons.map(s => {
     const eps = bySeason.get(s).sort((a, b) => a - b);
-    return eps.length > 0 ? `S${s} E${eps.join(', ')}` : `S${s}`;
+    return eps.length > 0 ? `Season ${s} (Ep ${eps.join(', ')})` : `Season ${s}`;
   });
-  return `${parts.join(' & ')} Added`;
+  return `${parts.join(' & ')} have been added with Sinhala subtitles.`;
 }
 
 // Update Document
@@ -674,7 +685,12 @@ app.put('/api/collections/:table/documents/:id', async (req, res) => {
             addedOrLinked.push(ep);
           } else if (
             episodeHasDownloadLink(ep) &&
-            (prev.dl !== ep.dl || JSON.stringify(prev.links) !== JSON.stringify(ep.links))
+            (
+              prev.dl !== ep.dl ||
+              JSON.stringify(prev.links) !== JSON.stringify(ep.links) ||
+              JSON.stringify(prev.burned) !== JSON.stringify(ep.burned) ||
+              JSON.stringify(prev.soft) !== JSON.stringify(ep.soft)
+            )
           ) {
             addedOrLinked.push(ep);
           }
