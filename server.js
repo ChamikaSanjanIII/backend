@@ -698,6 +698,18 @@ app.put('/api/collections/:table/documents/:id', async (req, res) => {
 
         if (addedOrLinked.length > 0) {
           computedUpdateNote = formatAddedEpisodesNote(addedOrLinked);
+        } else {
+          // Episode was deleted or its download link was removed:
+          // Revert lastUpdateNote to the latest remaining episode that still has a download link
+          const remainingLinked = newEps.filter(ep => episodeHasDownloadLink(ep));
+          if (remainingLinked.length > 0) {
+            const latestRemaining = remainingLinked[remainingLinked.length - 1];
+            computedUpdateNote = formatAddedEpisodesNote([latestRemaining]);
+          } else {
+            computedUpdateNote = table === 'anime'
+              ? 'New anime has been added with Sinhala subtitles.'
+              : 'New TV series has been added with Sinhala subtitles.';
+          }
         }
       }
     }
