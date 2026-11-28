@@ -177,6 +177,9 @@ export async function localizeDocumentImages(table, body) {
   if (body.logo && typeof body.logo === 'string') {
     body.logo = await downloadAndConvertToWebp(body.logo, 500);
   }
+  if (body.mobileHero && typeof body.mobileHero === 'string') {
+    body.mobileHero = await downloadAndConvertToWebp(body.mobileHero, 800);
+  }
 
   for (const field of ['castWithPhotos', 'directorsWithPhotos', 'directorPhotos', 'studioLogos']) {
     if (body[field]) {
@@ -214,6 +217,100 @@ export async function localizeDocumentImages(table, body) {
   }
 
   return body;
+}
+
+export function rewriteSingleUrlIfExists(url) {
+  if (!url || typeof url !== 'string') return url;
+  const trimmed = url.trim();
+  if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) return url;
+  if (trimmed.startsWith(IMAGE_PUBLIC_BASE_URL)) return trimmed;
+  const baseName = getOriginalBasename(trimmed);
+  const fileName = `${baseName}.webp`;
+  const absPath = path.join(IMAGE_STORAGE_DIR, fileName);
+  if (fs.existsSync(absPath) && fs.statSync(absPath).size > 0) {
+    return `${IMAGE_PUBLIC_BASE_URL}/${fileName}`;
+  }
+  return url;
+}
+
+function rewriteNestedIfExists(val) {
+  if (!val) return { value: val, changed: false };
+  const wasString = typeof val === 'string';
+  let parsed = val;
+  if (wasString) {
+    const t = val.trim();
+    if (t.startsWith('http://') || t.startsWith('https://')) {
+      const next = rewriteSingleUrlIfExists(t);
+      return { value: next, changed: next !== t };
+    }
+    if ((t.startsWith('[') && t.endsWith(']')) || (t.startsWith('{') && t.endsWith('}'))) {
+      try { parsed = JSON.parse(t); } catch { return { value: val, changed: false }; }
+    } else {
+      return { value: val, changed: false };
+    }
+  }
+
+  let changed = false;
+  if (Array.isArray(parsed)) {
+    for (let i = 0; i < parsed.length; i++) {
+      const item = parsed[i];
+      if (typeof item === 'string') {
+        const next = rewriteSingleUrlIfExists(item);
+        if (next !== item) { parsed[i] = next; changed = true; }
+      } else if (item && typeof item === 'object') {
+        for (const key of ['photo', 'image', 'logo', 'profile_path', 'logo_path', 'url', 'avatar', 'thumbnail']) {
+          if (typeof item[key] === 'string') {
+            const next = rewriteSingleUrlIfExists(item[key]);
+            if (next !== item[key]) { item[key] = next; changed = true; }
+          }
+        }
+      }
+    }
+  } else if (parsed && typeof parsed === 'object') {
+    for (const key of Object.keys(parsed)) {
+      const v = parsed[key];
+      if (typeof v === 'string') {
+        const next = rewriteSingleUrlIfExists(v);
+        if (next !== v) { parsed[key] = next; changed = true; }
+      } else if (v && typeof v === 'object') {
+        const sub = rewriteNestedIfExists(v);
+        if (sub.changed) { parsed[key] = sub.value; changed = true; }
+      }
+    }
+  }
+
+  return { value: wasString && changed ? JSON.stringify(parsed) : (changed ? parsed : val), changed };
+}
+
+/**
+ * Instant link-only rewrite: updates any external image URL to image.cmoviez.com/<name>.webp
+ * ONLY if that .webp file already exists on the VPS. Zero downloads, zero sharp, instant.
+ */
+export function rewriteDocumentLinksFromLocal(body) {
+  if (!body || typeof body !== 'object') return false;
+  let anyChanged = false;
+
+  for (const field of ['poster', 'backdrop', 'logo', 'mobileHero']) {
+    if (typeof body[field] === 'string') {
+      const next = rewriteSingleUrlIfExists(body[field]);
+      if (next !== body[field]) {
+        body[field] = next;
+        anyChanged = true;
+      }
+    }
+  }
+
+  for (const field of ['episodes', 'castWithPhotos', 'directorsWithPhotos', 'directorPhotos', 'studioLogos']) {
+    if (body[field]) {
+      const res = rewriteNestedIfExists(body[field]);
+      if (res.changed) {
+        body[field] = res.value;
+        anyChanged = true;
+      }
+    }
+  }
+
+  return anyChanged;
 }
 
 export function listHostedImages() {

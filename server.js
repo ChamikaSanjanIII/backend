@@ -6,7 +6,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { generateSitemaps } from './generate_sitemap.js';
-import { localizeDocumentImages, listHostedImages, deleteHostedImages } from './imageHost.js';
+import { localizeDocumentImages, rewriteDocumentLinksFromLocal, listHostedImages, deleteHostedImages } from './imageHost.js';
 
 dotenv.config();
 
@@ -941,6 +941,7 @@ app.post('/api/images/migrate-all', async (req, res) => {
             poster: doc.poster,
             backdrop: doc.backdrop,
             logo: doc.logo,
+            mobileHero: doc.mobileHero,
             episodes: doc.episodes,
             castWithPhotos: doc.castWithPhotos,
             directorsWithPhotos: doc.directorsWithPhotos,
@@ -959,6 +960,7 @@ app.post('/api/images/migrate-all', async (req, res) => {
                   poster: payload.poster,
                   backdrop: payload.backdrop,
                   logo: payload.logo,
+                  mobileHero: payload.mobileHero,
                   episodes: payload.episodes,
                   castWithPhotos: payload.castWithPhotos,
                   directorsWithPhotos: payload.directorsWithPhotos,
@@ -997,6 +999,46 @@ app.delete('/api/images', (req, res) => {
     return res.json(result);
   } catch (error) {
     console.error('Delete images error:', error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// Instant Update Links: rewrites all DB image URLs to image.cmoviez.com/<name>.webp for files already on VPS (preserves updatedAt)
+app.post('/api/images/update-links', async (req, res) => {
+  if (!verifyAuth(req)) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  try {
+    let scannedDocs = 0;
+    let updatedDocs = 0;
+
+    for (const [, Model] of Object.entries(modelsMap)) {
+      const docs = await Model.find({}).lean();
+      for (const doc of docs) {
+        scannedDocs++;
+        const payload = {
+          poster: doc.poster,
+          backdrop: doc.backdrop,
+          logo: doc.logo,
+          mobileHero: doc.mobileHero,
+          episodes: doc.episodes,
+          castWithPhotos: doc.castWithPhotos,
+          directorsWithPhotos: doc.directorsWithPhotos,
+          directorPhotos: doc.directorPhotos,
+          studioLogos: doc.studioLogos
+        };
+
+        const changed = rewriteDocumentLinksFromLocal(payload);
+        if (changed) {
+          await Model.collection.updateOne({ _id: doc._id }, { $set: payload });
+          updatedDocs++;
+        }
+      }
+    }
+
+    return res.json({ ok: true, scannedDocs, updatedDocs });
+  } catch (error) {
+    console.error('Update links error:', error);
     return res.status(500).json({ error: error.message });
   }
 });
