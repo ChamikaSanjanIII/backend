@@ -940,7 +940,12 @@ app.post('/api/images/migrate-all', async (req, res) => {
           const payload = {
             poster: doc.poster,
             backdrop: doc.backdrop,
-            episodes: doc.episodes
+            logo: doc.logo,
+            episodes: doc.episodes,
+            castWithPhotos: doc.castWithPhotos,
+            directorsWithPhotos: doc.directorsWithPhotos,
+            directorPhotos: doc.directorPhotos,
+            studioLogos: doc.studioLogos
           };
           const before = JSON.stringify(payload);
           await localizeDocumentImages(colName, payload);
@@ -949,7 +954,18 @@ app.post('/api/images/migrate-all', async (req, res) => {
           if (before !== after) {
             await Model.collection.updateOne(
               { _id: doc._id },
-              { $set: { poster: payload.poster, backdrop: payload.backdrop, episodes: payload.episodes } }
+              {
+                $set: {
+                  poster: payload.poster,
+                  backdrop: payload.backdrop,
+                  logo: payload.logo,
+                  episodes: payload.episodes,
+                  castWithPhotos: payload.castWithPhotos,
+                  directorsWithPhotos: payload.directorsWithPhotos,
+                  directorPhotos: payload.directorPhotos,
+                  studioLogos: payload.studioLogos
+                }
+              }
             );
             imageMigrationState.updatedDocs++;
           }

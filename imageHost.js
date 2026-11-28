@@ -111,8 +111,57 @@ async function downloadAndConvertToWebp(sourceUrl, maxWidth = 640) {
   }
 }
 
+async function localizeNestedMediaUrls(val, maxWidth = 300) {
+  if (!val) return { value: val, changed: false };
+  const wasString = typeof val === 'string';
+  let parsed = val;
+  if (wasString) {
+    const t = val.trim();
+    if (t.startsWith('http://') || t.startsWith('https://')) {
+      const next = await downloadAndConvertToWebp(t, maxWidth);
+      return { value: next, changed: next !== t };
+    }
+    if ((t.startsWith('[') && t.endsWith(']')) || (t.startsWith('{') && t.endsWith('}'))) {
+      try { parsed = JSON.parse(t); } catch { return { value: val, changed: false }; }
+    } else {
+      return { value: val, changed: false };
+    }
+  }
+
+  let changed = false;
+  if (Array.isArray(parsed)) {
+    for (let i = 0; i < parsed.length; i++) {
+      const item = parsed[i];
+      if (typeof item === 'string' && (item.startsWith('http://') || item.startsWith('https://'))) {
+        const next = await downloadAndConvertToWebp(item, maxWidth);
+        if (next !== item) { parsed[i] = next; changed = true; }
+      } else if (item && typeof item === 'object') {
+        for (const key of ['photo', 'image', 'logo', 'profile_path', 'logo_path', 'url', 'avatar']) {
+          if (typeof item[key] === 'string' && (item[key].startsWith('http://') || item[key].startsWith('https://'))) {
+            const next = await downloadAndConvertToWebp(item[key], maxWidth);
+            if (next !== item[key]) { item[key] = next; changed = true; }
+          }
+        }
+      }
+    }
+  } else if (parsed && typeof parsed === 'object') {
+    for (const key of Object.keys(parsed)) {
+      const v = parsed[key];
+      if (typeof v === 'string' && (v.startsWith('http://') || v.startsWith('https://'))) {
+        const next = await downloadAndConvertToWebp(v, maxWidth);
+        if (next !== v) { parsed[key] = next; changed = true; }
+      } else if (v && typeof v === 'object') {
+        const sub = await localizeNestedMediaUrls(v, maxWidth);
+        if (sub.changed) { parsed[key] = sub.value; changed = true; }
+      }
+    }
+  }
+
+  return { value: wasString && changed ? JSON.stringify(parsed) : (changed ? parsed : val), changed };
+}
+
 /**
- * Automatically downloads external poster, backdrop, and linked-episode thumbnails,
+ * Automatically downloads external poster, backdrop, logo, actor/director/studio photos, and linked-episode thumbnails,
  * converts them to compressed WebP in ONE flat VPS folder, and rewrites URLs to image.cmoviez.com/<name>.webp.
  */
 export async function localizeDocumentImages(table, body) {
@@ -124,6 +173,16 @@ export async function localizeDocumentImages(table, body) {
   }
   if (body.backdrop && typeof body.backdrop === 'string') {
     body.backdrop = await downloadAndConvertToWebp(body.backdrop, 1280);
+  }
+  if (body.logo && typeof body.logo === 'string') {
+    body.logo = await downloadAndConvertToWebp(body.logo, 500);
+  }
+
+  for (const field of ['castWithPhotos', 'directorsWithPhotos', 'directorPhotos', 'studioLogos']) {
+    if (body[field]) {
+      const res = await localizeNestedMediaUrls(body[field], 300);
+      if (res.changed) body[field] = res.value;
+    }
   }
 
   if (body.episodes) {
