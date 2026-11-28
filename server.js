@@ -886,44 +886,84 @@ app.get('/api/images', async (req, res) => {
   }
 });
 
-// Auto-migrate ALL existing Movies, TV Shows, and Anime image URLs to image.cmoviez.com
+// Background migration state (prevents Cloudflare 100s HTTP timeout when converting hundreds of images)
+let imageMigrationState = {
+  running: false,
+  scannedDocs: 0,
+  updatedDocs: 0,
+  totalDocs: 0,
+  error: null,
+  finishedAt: null
+};
+
+app.get('/api/images/migrate-status', (req, res) => {
+  if (!verifyAuth(req)) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  return res.json(imageMigrationState);
+});
+
+// Auto-migrate ALL existing Movies, TV Shows, and Anime image URLs to image.cmoviez.com (Background job)
 app.post('/api/images/migrate-all', async (req, res) => {
   if (!verifyAuth(req)) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  try {
-    let updatedDocs = 0;
-    let scannedDocs = 0;
+  if (imageMigrationState.running) {
+    return res.json({ ok: true, alreadyRunning: true, ...imageMigrationState });
+  }
 
-    for (const [colName, Model] of Object.entries(modelsMap)) {
-      const docs = await Model.find({}).lean();
-      for (const doc of docs) {
-        scannedDocs++;
-        const payload = {
-          poster: doc.poster,
-          backdrop: doc.backdrop,
-          episodes: doc.episodes
-        };
-        const before = JSON.stringify(payload);
-        await localizeDocumentImages(colName, payload);
-        const after = JSON.stringify(payload);
+  imageMigrationState = {
+    running: true,
+    scannedDocs: 0,
+    updatedDocs: 0,
+    totalDocs: 0,
+    error: null,
+    finishedAt: null
+  };
 
-        if (before !== after) {
-          // Use native updateOne so updatedAt is NEVER bumped during migration
-          await Model.collection.updateOne(
-            { _id: doc._id },
-            { $set: { poster: payload.poster, backdrop: payload.backdrop, episodes: payload.episodes } }
-          );
-          updatedDocs++;
+  // Respond immediately so Cloudflare/Nginx NEVER times out
+  res.json({ ok: true, started: true, message: 'Migration started in background. Click Refresh in a moment to see progress.' });
+
+  // Run migration in background
+  (async () => {
+    try {
+      const entries = Object.entries(modelsMap);
+      let total = 0;
+      for (const [, Model] of entries) {
+        total += await Model.countDocuments({});
+      }
+      imageMigrationState.totalDocs = total;
+
+      for (const [colName, Model] of entries) {
+        const docs = await Model.find({}).lean();
+        for (const doc of docs) {
+          const payload = {
+            poster: doc.poster,
+            backdrop: doc.backdrop,
+            episodes: doc.episodes
+          };
+          const before = JSON.stringify(payload);
+          await localizeDocumentImages(colName, payload);
+          const after = JSON.stringify(payload);
+
+          if (before !== after) {
+            await Model.collection.updateOne(
+              { _id: doc._id },
+              { $set: { poster: payload.poster, backdrop: payload.backdrop, episodes: payload.episodes } }
+            );
+            imageMigrationState.updatedDocs++;
+          }
+          imageMigrationState.scannedDocs++;
         }
       }
+      imageMigrationState.finishedAt = new Date().toISOString();
+    } catch (error) {
+      console.error('Migrate images error:', error);
+      imageMigrationState.error = error.message;
+    } finally {
+      imageMigrationState.running = false;
     }
-
-    return res.json({ ok: true, scannedDocs, updatedDocs });
-  } catch (error) {
-    console.error('Migrate images error:', error);
-    return res.status(500).json({ error: error.message });
-  }
+  })();
 });
 
 app.delete('/api/images', (req, res) => {
