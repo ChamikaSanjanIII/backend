@@ -6,6 +6,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { generateSitemaps } from './generate_sitemap.js';
+import { localizeDocumentImages, listHostedImages, deleteHostedImages } from './imageHost.js';
 
 dotenv.config();
 
@@ -474,6 +475,9 @@ app.post('/api/collections/:table/documents', async (req, res) => {
     const id = body.id || new mongoose.Types.ObjectId().toString();
     delete body.id;
 
+    // Auto-download & convert external images to WebP on VPS (image.cmoviez.com)
+    await localizeDocumentImages(table, body);
+
     if (!body.lastUpdateNote) {
       if (table === 'tvshows') {
         body.lastUpdateNote = 'New TV series has been added with Sinhala subtitles.';
@@ -714,6 +718,9 @@ app.put('/api/collections/:table/documents/:id', async (req, res) => {
       }
     }
 
+    // Auto-download & convert any new external images to WebP on VPS (image.cmoviez.com)
+    await localizeDocumentImages(table, body);
+
     const updatePayload = { ...body };
     if (shouldBumpUpdatedAt) {
       updatePayload.updatedAt = new Date();
@@ -827,6 +834,113 @@ app.post('/api/collections/:table/documents/:id/track-download', async (req, res
     });
   } catch (error) {
     console.error('Track download error:', error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// ── Hosted Images Management (VPS / image.cmoviez.com) ───────────────
+app.get('/api/images', async (req, res) => {
+  if (!verifyAuth(req)) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  try {
+    const data = listHostedImages();
+
+    // Map flat filenames back to their Movie / TV Series / Anime title for clean Dashboard grouping
+    const ownerMap = new Map();
+    for (const [colName, Model] of Object.entries(modelsMap)) {
+      const docs = await Model.find({}, { title: 1, name: 1, poster: 1, backdrop: 1, episodes: 1 }).lean();
+      for (const doc of docs) {
+        const title = doc.title || doc.name || 'Untitled';
+        const register = (url, role) => {
+          if (!url || typeof url !== 'string') return;
+          try {
+            const fname = new URL(url).pathname.split('/').pop();
+            if (fname) ownerMap.set(fname, { collection: colName, folder: title, role });
+          } catch {}
+        };
+        register(doc.poster, 'poster');
+        register(doc.backdrop, 'backdrop');
+        if (doc.episodes) {
+          let eps = doc.episodes;
+          if (typeof eps === 'string') { try { eps = JSON.parse(eps); } catch { eps = []; } }
+          if (Array.isArray(eps)) {
+            for (const ep of eps) register(ep?.thumbnail, 'episode');
+          }
+        }
+      }
+    }
+
+    data.images = data.images.map(img => {
+      const owner = ownerMap.get(img.filename);
+      if (owner) {
+        return { ...img, collection: owner.collection, folder: owner.folder, role: owner.role };
+      }
+      return img;
+    });
+
+    return res.json(data);
+  } catch (error) {
+    console.error('List images error:', error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// Auto-migrate ALL existing Movies, TV Shows, and Anime image URLs to image.cmoviez.com
+app.post('/api/images/migrate-all', async (req, res) => {
+  if (!verifyAuth(req)) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  try {
+    let updatedDocs = 0;
+    let scannedDocs = 0;
+
+    for (const [colName, Model] of Object.entries(modelsMap)) {
+      const docs = await Model.find({}).lean();
+      for (const doc of docs) {
+        scannedDocs++;
+        const payload = {
+          poster: doc.poster,
+          backdrop: doc.backdrop,
+          episodes: doc.episodes
+        };
+        const before = JSON.stringify(payload);
+        await localizeDocumentImages(colName, payload);
+        const after = JSON.stringify(payload);
+
+        if (before !== after) {
+          // Use native updateOne so updatedAt is NEVER bumped during migration
+          await Model.collection.updateOne(
+            { _id: doc._id },
+            { $set: { poster: payload.poster, backdrop: payload.backdrop, episodes: payload.episodes } }
+          );
+          updatedDocs++;
+        }
+      }
+    }
+
+    return res.json({ ok: true, scannedDocs, updatedDocs });
+  } catch (error) {
+    console.error('Migrate images error:', error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete('/api/images', (req, res) => {
+  if (!verifyAuth(req)) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  try {
+    const paths = Array.isArray(req.body?.paths)
+      ? req.body.paths
+      : (req.body?.path ? [req.body.path] : []);
+    if (paths.length === 0) {
+      return res.status(400).json({ error: 'No image paths provided' });
+    }
+    const result = deleteHostedImages(paths);
+    return res.json(result);
+  } catch (error) {
+    console.error('Delete images error:', error);
     return res.status(500).json({ error: error.message });
   }
 });
